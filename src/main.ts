@@ -91,6 +91,8 @@ type ScrollSnapshot = {
   previewTop: number
 }
 
+type ElementPickerSource = 'prompt' | 'apply-range'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
 const GENERATE_API_URL = `${API_BASE_URL}/api/generate-tags`
 const UPDATE_API_URL = `${API_BASE_URL}/api/update-tags`
@@ -125,6 +127,12 @@ let isSaveDialogOpen = false
 let saveDialogError = ''
 let historyPast: HistoryEntry[] = []
 let historyFuture: HistoryEntry[] = []
+let elementPickerSource: ElementPickerSource | null = null
+let promptPickerMarkerIndex: number | null = null
+let previewPickerDocument: Document | null = null
+let previewPickableElements: HTMLElement[] = []
+let previewHoveredElement: HTMLElement | null = null
+let previewSelectedElement: HTMLElement | null = null
 
 const $ = <T extends Element>(selector: string) => document.querySelector<T>(selector)
 const $$ = <T extends Element>(selector: string) => Array.from(document.querySelectorAll<T>(selector))
@@ -211,6 +219,297 @@ function restoreScrollSnapshot(snapshot: ScrollSnapshot) {
   restorePreviewScroll(snapshot)
 }
 
+function cssIdentifier(value: string) {
+  const cssApi = window.CSS as unknown as { escape?: (input: string) => string }
+  return typeof cssApi.escape === 'function' ? cssApi.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, '\\$&')
+}
+
+function selectorCount(doc: Document, selector: string) {
+  try {
+    return doc.querySelectorAll(selector).length
+  } catch {
+    return 0
+  }
+}
+
+function selectorForPreviewElement(element: HTMLElement) {
+  const doc = element.ownerDocument
+  const tagName = element.tagName.toLowerCase()
+
+  if (element.id) return `#${cssIdentifier(element.id)}`
+  if (tagName === 'body' || tagName === 'html') return tagName
+
+  const classNames = Array.from(element.classList).filter(Boolean)
+  const uniqueClass = classNames.find((className) => selectorCount(doc, `.${cssIdentifier(className)}`) === 1)
+  if (uniqueClass) return `.${cssIdentifier(uniqueClass)}`
+  if (classNames.length > 0) {
+    const classSelector = classNames.map((className) => `.${cssIdentifier(className)}`).join('')
+    if (selectorCount(doc, classSelector) > 0) return classSelector
+  }
+
+  const path: string[] = []
+  let current: HTMLElement | null = element
+
+  while (current && current !== doc.documentElement) {
+    const currentTagName = current.tagName.toLowerCase()
+    if (currentTagName === 'body') {
+      path.unshift('body')
+      break
+    }
+
+    const parent: HTMLElement | null = current.parentElement
+    const sameTagSiblings = parent
+        ? Array.from(parent.children).filter((sibling): sibling is HTMLElement => (sibling as HTMLElement).tagName === current?.tagName)
+        : []
+    const position = sameTagSiblings.indexOf(current) + 1
+    path.unshift(sameTagSiblings.length > 1 ? `${currentTagName}:nth-of-type(${position})` : currentTagName)
+
+    const candidate = path.join(' > ')
+    if (selectorCount(doc, candidate) === 1) return candidate
+    current = parent
+  }
+
+  return path.join(' > ') || tagName
+}
+
+function isPreviewElementPickable(element: HTMLElement) {
+  const tagName = element.tagName.toLowerCase()
+  if (['script', 'style', 'meta', 'link', 'title'].includes(tagName)) return false
+  if (element.id === 'styleprism-element-picker-styles') return false
+
+  const rect = element.getBoundingClientRect()
+  if (rect.width < 2 || rect.height < 2) return false
+
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+  return Boolean(style && style.display !== 'none' && style.visibility !== 'hidden')
+}
+
+function collectPreviewPickableElements(doc: Document) {
+  const body = doc.body
+  if (!body) return []
+
+  return [body, ...Array.from(body.querySelectorAll<HTMLElement>('*'))].filter(isPreviewElementPickable)
+}
+
+function ensureElementPickerStyles(doc: Document) {
+  if (doc.getElementById('styleprism-element-picker-styles')) return
+
+  const style = doc.createElement('style')
+  style.id = 'styleprism-element-picker-styles'
+  style.textContent = `
+    [data-styleprism-picker-hover] {
+      outline: 2px solid rgba(14, 165, 233, .95) !important;
+      outline-offset: 2px !important;
+      cursor: crosshair !important;
+    }
+    [data-styleprism-picker-selected] {
+      outline: 3px solid rgba(79, 70, 229, .98) !important;
+      outline-offset: 3px !important;
+      box-shadow: 0 0 0 5px rgba(79, 70, 229, .18) !important;
+      cursor: crosshair !important;
+    }
+  `
+  doc.head?.appendChild(style)
+}
+
+function clearPreviewPickerMarks() {
+  previewHoveredElement?.removeAttribute('data-styleprism-picker-hover')
+  previewSelectedElement?.removeAttribute('data-styleprism-picker-selected')
+}
+
+function setPreviewPickedElement(element: HTMLElement | null) {
+  if (!element) return
+
+  clearPreviewPickerMarks()
+  previewHoveredElement = element
+  previewSelectedElement = element
+  previewHoveredElement.setAttribute('data-styleprism-picker-hover', 'true')
+  previewSelectedElement.setAttribute('data-styleprism-picker-selected', 'true')
+}
+
+function previewElementFromTarget(target: EventTarget | null) {
+  if (!target || (target as Node).nodeType !== 1) return null
+
+  let element: HTMLElement | null = target as HTMLElement
+  while (element && !previewPickableElements.includes(element)) {
+    element = element.parentElement
+  }
+  return element
+}
+
+function cleanupPreviewElementPicker() {
+  clearPreviewPickerMarks()
+
+  if (previewPickerDocument) {
+    previewPickerDocument.removeEventListener('mousemove', handlePreviewPickerMouseMove, true)
+    previewPickerDocument.removeEventListener('click', handlePreviewPickerClick, true)
+    previewPickerDocument.removeEventListener('keydown', handleElementPickerKeydown, true)
+  }
+
+  previewPickerDocument = null
+  previewPickableElements = []
+  previewHoveredElement = null
+  previewSelectedElement = null
+}
+
+function attachElementPickerToPreview() {
+  if (!elementPickerSource) return
+
+  const frame = $<HTMLIFrameElement>('.preview-frame')
+  if (!frame) return
+
+  const attach = () => {
+    const doc = frame.contentDocument
+    if (!doc?.body) return
+
+    cleanupPreviewElementPicker()
+    previewPickerDocument = doc
+    previewPickableElements = collectPreviewPickableElements(doc)
+    ensureElementPickerStyles(doc)
+    doc.addEventListener('mousemove', handlePreviewPickerMouseMove, true)
+    doc.addEventListener('click', handlePreviewPickerClick, true)
+    doc.addEventListener('keydown', handleElementPickerKeydown, true)
+    setPreviewPickedElement(previewPickableElements.find((element) => element !== doc.body) ?? previewPickableElements[0] ?? null)
+  }
+
+  frame.addEventListener('load', attach, { once: true })
+  attach()
+}
+
+function startElementPicker(source: ElementPickerSource, markerIndex: number | null = null) {
+  elementPickerSource = source
+  promptPickerMarkerIndex = source === 'prompt' ? markerIndex : null
+  document.body.classList.add('is-element-picker-active')
+  attachElementPickerToPreview()
+}
+
+function stopElementPicker() {
+  cleanupPreviewElementPicker()
+  elementPickerSource = null
+  promptPickerMarkerIndex = null
+  document.body.classList.remove('is-element-picker-active')
+}
+
+function sourceInputStillHasPickerMarker() {
+  if (elementPickerSource === 'apply-range') {
+    return Boolean(($<HTMLInputElement>('#range-input')?.value ?? '').includes('@'))
+  }
+
+  if (elementPickerSource === 'prompt') {
+    const input = $<HTMLTextAreaElement>('#prompt-input')
+    return Boolean(input && promptPickerMarkerIndex !== null && input.value[promptPickerMarkerIndex] === '@')
+  }
+
+  return false
+}
+
+function stopElementPickerIfMarkerWasDeleted() {
+  if (elementPickerSource && !sourceInputStillHasPickerMarker()) stopElementPicker()
+}
+
+function selectAdjacentPreviewElement(direction: 1 | -1) {
+  if (previewPickableElements.length === 0) return
+
+  const currentIndex = previewSelectedElement ? previewPickableElements.indexOf(previewSelectedElement) : -1
+  const nextIndex = currentIndex < 0
+      ? 0
+      : (currentIndex + direction + previewPickableElements.length) % previewPickableElements.length
+  const nextElement = previewPickableElements[nextIndex]
+  setPreviewPickedElement(nextElement)
+  nextElement.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+
+function insertPromptSelector(selector: string) {
+  const normalizedSelector = normalizeApplyRangeSelector(selector)
+  const token = `@${normalizedSelector}`
+  const input = $<HTMLTextAreaElement>('#prompt-input')
+  const currentValue = input?.value ?? promptText
+  const markerIndex = promptPickerMarkerIndex !== null && currentValue[promptPickerMarkerIndex] === '@'
+      ? promptPickerMarkerIndex
+      : currentValue.lastIndexOf('@')
+  const insertIndex = markerIndex >= 0 ? markerIndex : input?.selectionStart ?? currentValue.length
+  const nextValue = markerIndex >= 0
+      ? `${currentValue.slice(0, insertIndex)}${token}${currentValue.slice(insertIndex + 1)}`
+      : `${currentValue.slice(0, insertIndex)}${token}${currentValue.slice(insertIndex)}`
+
+  promptText = nextValue
+  if (input) {
+    input.value = nextValue
+    input.focus()
+    input.selectionStart = insertIndex + token.length
+    input.selectionEnd = input.selectionStart
+  }
+}
+
+function confirmPreviewElementPick() {
+  if (!elementPickerSource || !previewSelectedElement) return
+
+  const source = elementPickerSource
+  const selector = selectorForPreviewElement(previewSelectedElement)
+  stopElementPicker()
+
+  if (source === 'apply-range') {
+    const input = $<HTMLInputElement>('#range-input')
+    if (input) input.value = ''
+    setSelectedApplyRange([...selectedApplyRange(), selector])
+    render()
+    return
+  }
+
+  insertPromptSelector(selector)
+}
+
+function handlePreviewPickerMouseMove(event: Event) {
+  if (!elementPickerSource) return
+
+  const element = previewElementFromTarget(event.target)
+  if (element) setPreviewPickedElement(element)
+}
+
+function handlePreviewPickerClick(event: Event) {
+  if (!elementPickerSource) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  confirmPreviewElementPick()
+}
+
+function handleElementPickerKeydown(event: KeyboardEvent) {
+  if (!elementPickerSource) return
+
+  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+    event.preventDefault()
+    event.stopPropagation()
+    selectAdjacentPreviewElement(1)
+    return
+  }
+
+  if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+    event.preventDefault()
+    event.stopPropagation()
+    selectAdjacentPreviewElement(-1)
+    return
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    event.stopPropagation()
+    confirmPreviewElementPick()
+    return
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    stopElementPicker()
+    return
+  }
+
+  if (event.key === 'Backspace' || event.key === 'Delete') {
+    requestAnimationFrame(stopElementPickerIfMarkerWasDeleted)
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -221,6 +520,10 @@ function stringValue(value: unknown, fallback = '') {
 
 function normalizeApplyRangeSelector(value: string) {
   return value.trim().replace(/^@+/, '').trim()
+}
+
+function promptTextForRequest() {
+  return promptText.replace(/@(?=(?:[#.[:]|body\b|html\b))/gi, '')
 }
 
 function arrayValue(value: unknown): unknown[] {
@@ -482,10 +785,11 @@ function rememberCurrentStateFrom(snapshot: HistoryEntry) {
 
 function buildRequest(operation: Operation, field: UpdateRequest['target']['field'] = null): UpdateRequest {
   const tag = findTag()
+  const requestPrompt = promptTextForRequest()
   return {
     mock: USE_MOCK_API,
     operation,
-    prompt: promptText,
+    prompt: requestPrompt,
     raw_html: rawHtml,
     target: {
       dimension:
@@ -497,7 +801,7 @@ function buildRequest(operation: Operation, field: UpdateRequest['target']['fiel
       tag_id: operation.includes('TAG_') ? tag?.tag_id ?? null : null,
       field,
     },
-    user_request: promptText,
+    user_request: requestPrompt,
     dimensions_tags_json: clone(dimensionsTagsJson),
     styled_html: buildStyledHtml(),
   }
@@ -540,9 +844,10 @@ async function sendUpdate(operation: Operation, field: UpdateRequest['target']['
 
 async function generateInitialDimensionsTagsJson() {
   const previousState = snapshotState()
+  const requestPrompt = promptTextForRequest()
   const request: GenerateRequest = {
     mock: USE_MOCK_API,
-    prompt: promptText,
+    prompt: requestPrompt,
     html: rawHtml,
   }
 
@@ -1101,7 +1406,7 @@ function renderDebugPanel() {
         ? buildRequest('UPDATE_PROMPT_OR_REFRESH')
         : {
           mock: USE_MOCK_API,
-          prompt: promptText,
+          prompt: promptTextForRequest(),
           html: rawHtml,
         }
   )
@@ -1195,9 +1500,13 @@ function render() {
 
   bindEvents()
   restoreScrollSnapshot(scrollSnapshot)
+  if (elementPickerSource) attachElementPickerToPreview()
 }
 
 function bindEvents() {
+  window.removeEventListener('keydown', handleElementPickerKeydown, true)
+  window.addEventListener('keydown', handleElementPickerKeydown, true)
+
   $$<HTMLButtonElement>('[data-open-detail]').forEach((button) => {
     button.addEventListener('click', () => {
       selectedTagId = button.dataset.openDetail ?? selectedTagId
@@ -1267,8 +1576,32 @@ function bindEvents() {
     updateSelectedSemantics((event.target as HTMLTextAreaElement).value)
   })
 
+  $('#prompt-input')?.addEventListener('input', (event) => {
+    const input = event.target as HTMLTextAreaElement
+    promptText = input.value
+
+    if ((event as InputEvent).data === '@') {
+      startElementPicker('prompt', Math.max(0, input.selectionStart - 1))
+      return
+    }
+
+    if (elementPickerSource === 'prompt') stopElementPickerIfMarkerWasDeleted()
+  })
+
+  $('#range-input')?.addEventListener('input', (event) => {
+    const input = event.target as HTMLInputElement
+
+    if (input.value.includes('@')) {
+      startElementPicker('apply-range')
+      return
+    }
+
+    if (elementPickerSource === 'apply-range') stopElementPickerIfMarkerWasDeleted()
+  })
+
   $('#range-input')?.addEventListener('keydown', (event) => {
     const keyboardEvent = event as KeyboardEvent
+    if (elementPickerSource) return
     if (keyboardEvent.key !== 'Enter' && keyboardEvent.key !== ',') return
 
     keyboardEvent.preventDefault()
@@ -1277,12 +1610,14 @@ function bindEvents() {
   })
 
   $('#range-input')?.addEventListener('blur', (event) => {
+    if (elementPickerSource) return
     const input = event.target as HTMLInputElement
     if (!input.value.trim()) return
     addSelectedApplyRange(input.value)
   })
 
   $('#range-input')?.addEventListener('paste', (event) => {
+    if (elementPickerSource) return
     const input = event.target as HTMLInputElement
     requestAnimationFrame(() => {
       if (input.value.includes(',')) addSelectedApplyRange(input.value)
