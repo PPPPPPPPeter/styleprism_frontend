@@ -984,7 +984,7 @@ function saveCurrentView(name: string, thumbnailName: string) {
     tagCount: tags.length,
   }
 
-  savedViews = [savedView, ...savedViews].slice(0, 8)
+  savedViews = [savedView, ...savedViews]
   persistSavedViews()
   isSaveDialogOpen = false
   saveDialogError = ''

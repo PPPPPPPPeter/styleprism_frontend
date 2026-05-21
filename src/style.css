@@ -49,6 +49,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 }
 
 .topbar {
+  min-width: 0;
   min-height: 72px;
   padding: 0 12px;
   display: flex;
@@ -83,6 +84,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
 .gallery-strip {
   width: 100%;
+  min-width: 0;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 160px;
@@ -91,7 +93,9 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
   overflow-x: auto;
   overflow-y: hidden;
   padding: 7px 0;
+  overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
+  scrollbar-gutter: stable;
 }
 .gallery-empty {
   gap: 10px;
