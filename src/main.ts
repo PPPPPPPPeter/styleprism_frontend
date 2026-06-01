@@ -451,8 +451,7 @@ function confirmPreviewElementPick() {
   if (source === 'apply-range') {
     const input = $<HTMLInputElement>('#range-input')
     if (input) input.value = ''
-    setSelectedApplyRange([...selectedApplyRange(), selector])
-    render()
+    addSelectedApplyRange(selector)
     return
   }
 
@@ -520,6 +519,19 @@ function stringValue(value: unknown, fallback = '') {
 
 function normalizeApplyRangeSelector(value: string) {
   return value.trim().replace(/^@+/, '').trim()
+}
+
+function uniqueApplyRangeSelectors(selectors: string[]) {
+  const seen = new Set<string>()
+
+  return selectors.reduce<string[]>((nextSelectors, selector) => {
+    const normalizedSelector = normalizeApplyRangeSelector(selector)
+    if (!normalizedSelector || seen.has(normalizedSelector)) return nextSelectors
+
+    seen.add(normalizedSelector)
+    nextSelectors.push(normalizedSelector)
+    return nextSelectors
+  }, [])
 }
 
 function promptTextForRequest() {
@@ -733,7 +745,39 @@ function buildStyledHtml() {
 
 function selectedApplyRange() {
   const tag = findTag()
-  return tag?.style_blocks.flatMap((block) => block.apply_range) ?? []
+  return uniqueApplyRangeSelectors(tag?.style_blocks.flatMap((block) => block.apply_range) ?? [])
+}
+
+function previewHtmlForExport() {
+  const frame = $<HTMLIFrameElement>('.preview-frame')
+  const frameSrcdoc = frame?.srcdoc || frame?.getAttribute('srcdoc') || ''
+  if (frameSrcdoc.trim()) return frameSrcdoc
+
+  try {
+    const doc = frame?.contentDocument
+    if (doc?.documentElement) return `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`
+  } catch {
+    // Fall back to the source used to render the preview.
+  }
+
+  return buildStyledHtml()
+}
+
+function exportCurrentPreviewHtml() {
+  const blob = new Blob([previewHtmlForExport()], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+
+  link.href = url
+  link.download = `styleprism-preview-${timestamp}.html`
+  document.body.append(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+  statusText = 'Exported current preview HTML'
+  render()
 }
 
 function snapshotState(): HistoryEntry {
@@ -852,7 +896,7 @@ async function generateInitialDimensionsTagsJson() {
   }
 
   isLoading = true
-  statusText = USE_MOCK_API ? 'Generating mock Dimensions & Tags JSON...' : 'Generating Dimensions & Tags JSON...'
+  statusText = USE_MOCK_API ? 'Generating Dimensions & Tags JSON...' : 'Generating Dimensions & Tags JSON...'
   lastRequest = request
   render()
 
@@ -871,7 +915,7 @@ async function generateInitialDimensionsTagsJson() {
     refreshMetadata()
     selectedTagId = flattenTags()[0]?.tag_id ?? ''
     rememberCurrentStateFrom(previousState)
-    statusText = USE_MOCK_API ? 'Generated mock data from backend DimensionAndTags.json' : 'Generated from backend'
+    statusText = USE_MOCK_API ? 'Generated data from backend DimensionAndTags.json' : 'Generated from backend'
   } catch (error) {
     console.error(error)
     statusText = 'Backend unavailable. Prompt is ready to retry.'
@@ -1026,23 +1070,34 @@ function parseApplyRangeInput(value: string) {
       .filter(Boolean)
 }
 
-function setSelectedApplyRange(selectors: string[]) {
+function setFirstStyleBlockApplyRange(selectors: string[]) {
   const tag = findTag()
   if (!tag?.style_blocks[0]) return
 
-  tag.style_blocks[0].apply_range = Array.from(new Set(selectors.map(normalizeApplyRangeSelector).filter(Boolean)))
+  tag.style_blocks[0].apply_range = uniqueApplyRangeSelectors(selectors)
   refreshMetadata()
 }
 
 function addSelectedApplyRange(value: string) {
-  const nextSelectors = [...selectedApplyRange(), ...parseApplyRangeInput(value)]
-  setSelectedApplyRange(nextSelectors)
+  const tag = findTag()
+  const firstBlock = tag?.style_blocks[0]
+  if (!firstBlock) return
+
+  setFirstStyleBlockApplyRange([...firstBlock.apply_range, ...parseApplyRangeInput(value)])
   render()
 }
 
 function removeSelectedApplyRange(selector: string) {
   const normalizedSelector = normalizeApplyRangeSelector(selector)
-  setSelectedApplyRange(selectedApplyRange().filter((item) => normalizeApplyRangeSelector(item) !== normalizedSelector))
+  const tag = findTag()
+  if (!tag || !normalizedSelector) return
+
+  tag.style_blocks.forEach((block) => {
+    block.apply_range = uniqueApplyRangeSelectors(block.apply_range)
+        .filter((item) => normalizeApplyRangeSelector(item) !== normalizedSelector)
+  })
+
+  refreshMetadata()
   render()
 }
 
@@ -1441,7 +1496,16 @@ function render() {
             <div>
               <span class="eyebrow">Live preview</span>
             </div>
-            <button class="favorite-button" type="button" data-save-view aria-label="Save current view">☆</button>
+            <div class="preview-actions">
+              <button class="favorite-button" type="button" data-save-view aria-label="Save current view" title="Save current view">☆</button>
+              <button class="export-button" type="button" data-export-preview aria-label="Export current preview HTML" title="Export current preview HTML">
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M12 3v12"></path>
+                  <path d="m7 10 5 5 5-5"></path>
+                  <path d="M5 21h14"></path>
+                </svg>
+              </button>
+            </div>
           </div>
           <iframe class="preview-frame" title="Styled HTML Preview" srcdoc="${escapeHtml(buildStyledHtml())}"></iframe>
           ${renderDebugPanel()}
@@ -1527,6 +1591,7 @@ function bindEvents() {
   $('[data-redo-history]')?.addEventListener('click', redoHistory)
 
   $('[data-save-view]')?.addEventListener('click', openSaveDialog)
+  $('[data-export-preview]')?.addEventListener('click', exportCurrentPreviewHtml)
 
   $$<HTMLButtonElement>('[data-restore-view]').forEach((button) => {
     button.addEventListener('click', () => restoreSavedView(button.dataset.restoreView ?? ''))

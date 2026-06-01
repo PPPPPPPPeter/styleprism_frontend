@@ -372,7 +372,12 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
   background: linear-gradient(180deg, #fff, var(--surface-2));
 }
 .panel-title h2 { font-size: 17px; letter-spacing: 0; }
-.favorite-button {
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.favorite-button, .export-button {
   width: 38px;
   min-height: 38px;
   display: grid;
@@ -385,7 +390,19 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
   line-height: 1;
   transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
 }
-.favorite-button:hover {
+.export-button {
+  font-size: 0;
+}
+.export-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.favorite-button:hover, .export-button:hover {
   border-color: var(--primary);
   background: var(--primary-soft);
   transform: translateY(-1px);
