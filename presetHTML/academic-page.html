@@ -3,20 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tom Whitfield – Academic Page</title>
+  <title>Danni Wang - HCI Researcher</title>
   <style>
     /* ============================================
        BASELINE LAYOUT ONLY
-       Keep only structure, spacing, sizing and flow.
-       Visual style such as colors, fonts, shadows,
-       decorative borders and typography is intentionally
-       left to generated style tags.
+       A single-screen bento/dashboard: eight blocks
+       laid out horizontally so the whole profile can
+       be taken in with little or no scrolling inside a
+       constrained preview frame.
+
+       Colors, fonts, shadows, radii and decoration are
+       intentionally omitted and left to StylePrism tags.
+       Inline SVG thumbnails use `currentColor`, so a tag
+       applied to a card recolors its illustration too.
        ============================================ */
     :root {
-      --content-max-width: 960px;
-      --section-gap: 12px;
-      --card-padding: 16px;
-      --grid-gap: 10px;
+      --gap: 12px;
+      --pad: 14px;
+      --card-pad: 14px;
     }
 
     *, *::before, *::after {
@@ -25,466 +29,470 @@
       padding: 0;
     }
 
+    body { min-width: 320px; }
+
+    img, svg { display: block; max-width: 100%; }
+
+    /* ---- the dashboard grid ---- */
     .academic-page {
-      max-width: var(--content-max-width);
+      max-width: 1200px;
       margin: 0 auto;
-      min-height: 100vh;
-      padding: 12px 16px 10px;
-      display: flex;
-      flex-direction: column;
-      gap: var(--section-gap);
+      padding: var(--pad);
+      display: grid;
+      gap: var(--gap);
+      align-content: start;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-areas:
+        "ident about      about      glance"
+        "ident interests  interests  glance"
+        "proj  proj       proj       proj"
+        "pubs  pubs       edu        contact";
     }
 
-    .card {
-      padding: var(--card-padding);
-    }
+    .a-ident    { grid-area: ident; }
+    .a-about    { grid-area: about; }
+    .a-interests{ grid-area: interests; }
+    .a-glance   { grid-area: glance; }
+    .a-projects { grid-area: proj; }
+    .a-pubs     { grid-area: pubs; }
+    .a-edu      { grid-area: edu; }
+    .a-contact  { grid-area: contact; }
+
+    .card { padding: var(--card-pad); }
 
     .section {
       display: flex;
       flex-direction: column;
+      gap: 8px;
+      height: 100%;
     }
 
     .section-heading {
-      margin: 0 0 5px 0;
       position: relative;
+      display: inline-block;
+      margin: 0;
+    }
+
+    .eyebrow-text,
+    .section-kicker,
+    .info-label,
+    .contact-label,
+    .pub-venue,
+    .edu-date {
       display: inline-block;
     }
 
-    .ap-divider {
-      margin: 6px 0;
+    .name, .title-line, .affil, .about-text, .project-desc,
+    .pub-title, .pub-authors, .contact-value, .info-value,
+    .edu-org, .edu-degree, .contact-lead {
+      margin: 0;
     }
 
-    .top-row {
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      gap: var(--grid-gap);
-      align-items: start;
-    }
-
+    /* ---- identity ---- */
     .profile-card {
       display: flex;
       flex-direction: column;
-      align-items: center;
+      align-items: stretch;
+      gap: 10px;
       text-align: center;
-      gap: 3px;
+      height: 100%;
     }
 
-    .avatar-wrap {
-      margin-bottom: 4px;
-    }
+    .avatar-wrap { display: grid; place-items: center; }
 
-    .avatar {
-      width: 52px;
-      height: 52px;
+    .avatar,
+    .avatar-photo {
+      width: 78px;
+      height: 78px;
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
     }
+    .avatar-photo { object-fit: cover; }
 
-    .name,
-    .title-line,
-    .affil,
-    .about-text,
-    .pub-title,
-    .pub-authors {
-      margin: 0;
-    }
+    .identity-block { display: grid; gap: 3px; }
 
-    .social-links {
+    .social-links,
+    .button-group,
+    .tags-row,
+    .contact-links {
       display: flex;
-      gap: 4px;
       flex-wrap: wrap;
-      justify-content: center;
-      margin-top: 4px;
+      gap: 6px;
     }
+    .social-links, .button-group { justify-content: center; }
 
-    .social-link {
-      padding: 2px 8px;
+    .social-link,
+    .button,
+    .tag {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
-    }
-
-    .stats-area {
-      width: 100%;
-      margin-top: 8px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      justify-content: center;
       gap: 4px;
+      min-height: 28px;
+      padding: 3px 10px;
+      white-space: nowrap;
     }
 
+    .mini-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: auto;
+    }
     .stat-item {
       display: flex;
       flex-direction: column;
+      gap: 2px;
       align-items: center;
-      padding: 3px 0;
+      text-align: center;
+      padding: 6px 3px;
     }
 
-    .info-col {
+    /* ---- at a glance ---- */
+    .info-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      height: 100%;
+    }
+    .info-list { display: flex; flex-direction: column; gap: 9px; }
+    .info-item { display: grid; gap: 2px; }
+    .status-badge { display: inline-block; padding: 1px 7px; white-space: nowrap; }
+
+    /* ---- projects: horizontal thumbnail cards ---- */
+    .project-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: var(--gap);
+    }
+    .project-card {
+      display: grid;
+      grid-template-columns: 104px minmax(0, 1fr);
+      gap: 11px;
+      align-items: center;
+      overflow: hidden;
+    }
+    .project-thumb {
+      width: 104px;
+      aspect-ratio: 4 / 3;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+    .project-thumb svg,
+    .project-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .project-body {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .project-meta { display: flex; align-items: center; gap: 6px; }
+
+    /* ---- publications: compact rows ---- */
+    .pub-list {
+      list-style: none;
       display: flex;
       flex-direction: column;
       gap: 0;
-      padding: var(--card-padding);
     }
+    .pub-item { display: grid; gap: 2px; padding: 8px 0; }
+    .pub-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; }
+    .pub-award { display: inline-block; padding: 1px 7px; white-space: nowrap; }
 
-    .tags-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-    }
-
-    .tag {
-      padding: 2px 8px;
-      white-space: nowrap;
-    }
-
-    .news-list,
-    .project-list,
-    .exp-list,
+    /* ---- education ---- */
     .edu-list {
       list-style: none;
-      margin: 0;
-      padding: 0;
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 10px;
     }
+    .edu-item { display: grid; gap: 2px; }
 
-    .news-list {
-      gap: 3px;
-    }
-
-    .news-item {
-      display: flex;
-      align-items: baseline;
-      gap: 5px;
-    }
-
-    .news-date,
-    .news-badge {
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .news-badge {
-      padding: 1px 5px;
-    }
-
-    .pub-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: var(--grid-gap);
-    }
-
-    .pub-card {
+    /* ---- contact ---- */
+    .contact-card {
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 9px;
+      height: 100%;
     }
+    .contact-item { display: grid; gap: 1px; }
 
-    .pub-header {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
+    /* Marks a spot a real photo/screenshot can drop into.
+       Swap the inner SVG for an <img> when you have assets. */
+    .image-placeholder { display: grid; place-items: center; width: 100%; height: 100%; }
+
+    /* ---- responsive collapse ---- */
+    @media (max-width: 920px) {
+      .academic-page {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas:
+          "ident about"
+          "ident interests"
+          "glance glance"
+          "proj  proj"
+          "pubs  pubs"
+          "edu   contact";
+      }
+      .project-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
-
-    .bottom-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: var(--grid-gap);
-      align-items: start;
-    }
-
-    .bottom-left,
-    .bottom-right {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .bottom-left {
-      gap: 0;
-      padding: var(--card-padding);
-    }
-
-    .project-item,
-    .exp-item,
-    .edu-item {
-      line-height: 1.45;
-    }
-
-    .ap-footer {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding-top: 8px;
-      flex-shrink: 0;
+    @media (max-width: 560px) {
+      .academic-page {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "ident" "about" "interests" "glance"
+          "proj" "pubs" "edu" "contact";
+      }
+      .project-strip { grid-template-columns: 1fr; }
+      .mini-stats { grid-template-columns: repeat(3, 1fr); }
     }
   </style>
 </head>
 <body>
-  <div class="academic-page">
+  <main class="academic-page" data-style-target="page-shell">
 
-    <!-- TOP ROW: Profile + About/News -->
-    <div class="top-row">
-
-      <!-- Profile Card -->
-      <div class="profile-card card">
-        <div class="avatar-wrap">
-          <div class="avatar">TW</div>
-        </div>
-        <h1 class="name">Tom Whitfield</h1>
-        <p class="title-line">PhD Candidate in Medieval History</p>
-        <p class="affil">Ashworth University, Centre for Medieval Studies</p>
-
-        <!-- Social links -->
-        <div class="social-links">
-          <a href="#" title="Academia.edu" class="social-link">AS</a>
-          <a href="#" title="Google Scholar" class="social-link">GS</a>
-          <a href="#" title="ORCID" class="social-link">OR</a>
-          <a href="#" title="Twitter/X" class="social-link">X</a>
-        </div>
-
-        <!-- Stats -->
-        <div class="stats-area">
-          <div class="stat-item">
-            <span class="stat-value">7</span>
-            <span class="stat-label">Publications</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-value">85+</span>
-            <span class="stat-label">Citations</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-value">3</span>
-            <span class="stat-label">Projects</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-value">2</span>
-            <span class="stat-label">Awards</span>
-          </div>
+    <!-- ============ IDENTITY ============ -->
+    <aside class="a-ident profile-card card" data-style-target="profile-card">
+      <div class="avatar-wrap" data-style-target="avatar-frame">
+        <!-- REPLACE: swap the SVG for a real photo, e.g.
+             <img class="avatar-photo" data-style-target="avatar-mark" alt="Danni Wang"
+                  src="data:image/png;base64,PASTE_YOUR_BASE64_HERE"> -->
+        <div class="avatar" data-style-target="avatar-mark" aria-label="Portrait placeholder for Danni Wang">
+          <svg viewBox="0 0 78 78" width="78" height="78" role="img" aria-hidden="true">
+            <rect x="0" y="0" width="78" height="78" rx="39" fill="currentColor" opacity="0.08" />
+            <circle cx="39" cy="31" r="14" fill="none" stroke="currentColor" stroke-width="3" />
+            <path d="M15 67 C15 51 27 45 39 45 C51 45 63 51 63 67" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+          </svg>
         </div>
       </div>
 
-      <!-- About + Research + News -->
-      <div class="info-col">
-        <section class="section">
-          <h2 class="section-heading">About</h2>
-          <p class="about-text">
-            I study how communities in medieval England were shaped by parish networks, land tenure, and ecclesiastical power.
-            My work combines traditional archival research with digital humanities methods — GIS mapping, network analysis, and digital palaeography —
-            to recover marginalised voices from monastic and parish records. I am advised by Prof. Eleanor Ashworth at the Centre for Medieval Studies.
-          </p>
-        </section>
-
-        <div class="ap-divider"></div>
-
-        <section class="section">
-          <h2 class="section-heading">Research Interests</h2>
-          <div class="tags-row">
-            <span class="tag">Medieval European History</span>
-            <span class="tag">Digital Humanities</span>
-            <span class="tag">Manuscript Studies</span>
-            <span class="tag">Cultural Memory</span>
-            <span class="tag">Archival Theory</span>
-            <span class="tag">Historical GIS</span>
-            <span class="tag">Material Culture</span>
-          </div>
-        </section>
-
-        <div class="ap-divider"></div>
-
-        <section class="section">
-          <h2 class="section-heading">News</h2>
-          <ul class="news-list">
-            <li class="news-item">
-              <span class="news-date">[Mar 2025]</span>
-              <span class="news-badge">NEW</span>
-              <span class="news-text">Article accepted at Past &amp; Present: "Mapping the Forgotten: Parish Networks in 14th-Century Yorkshire"</span>
-            </li>
-            <li class="news-item">
-              <span class="news-date">[Jan 2025]</span>
-              <span class="news-badge">NEW</span>
-              <span class="news-text">Awarded Dunham Fellowship for Medieval Studies at the Bodleian Library</span>
-            </li>
-            <li class="news-item">
-              <span class="news-date">[Oct 2024]</span>
-              <span class="news-text">Presented at the International Medieval Congress, Leeds</span>
-            </li>
-            <li class="news-item">
-              <span class="news-date">[Jun 2024]</span>
-              <span class="news-text">Digital archive project "Voces Monasticae" launched publicly</span>
-            </li>
-          </ul>
-        </section>
+      <div class="identity-block" data-style-target="identity-copy">
+        <p class="section-kicker">PhD Researcher · HCI</p>
+        <h1 class="name">Danni Wang</h1>
+        <p class="title-line">Human-AI Interaction</p>
+        <p class="affil">Close Lab · Cewcastle University</p>
       </div>
-    </div>
 
-    <!-- PUBLICATIONS -->
-    <section class="section">
-      <h2 class="section-heading">Selected Publications</h2>
-      <div class="pub-grid">
-        <div class="pub-card card">
-          <div class="pub-header">
-            <span class="pub-venue">Past &amp; Present, 2025</span>
-          </div>
-          <h3 class="pub-title">Mapping the Forgotten: Parish Networks and Rural Authority in 14th-Century Yorkshire</h3>
-          <p class="pub-authors">T. Whitfield, E. Ashworth</p>
-          <div class="tags-row">
-            <span class="tag tag--secondary">Medieval</span>
-            <span class="tag tag--secondary">Network Analysis</span>
-          </div>
-        </div>
+      <nav class="social-links" aria-label="Profile links" data-style-target="profile-links">
+        <a href="mailto:danni.wang@cewcastle.ac.uk" class="social-link" title="Email">Email</a>
+        <a href="#" class="social-link" title="Google Scholar">Scholar</a>
+        <a href="#" class="social-link" title="GitHub">GitHub</a>
+        <a href="#" class="social-link" title="ORCID">ORCID</a>
+      </nav>
 
-        <div class="pub-card card">
-          <div class="pub-header">
-            <span class="pub-venue">Digital Scholarship in the Humanities, 2024</span>
-            <span class="pub-award">★ Editor's Choice</span>
-          </div>
-          <h3 class="pub-title">Voces Monasticae: A Digital Framework for Recovering Marginal Voices in Monastic Records</h3>
-          <p class="pub-authors">T. Whitfield, R. Chen, H. Byrne</p>
-          <div class="tags-row">
-            <span class="tag tag--secondary">Digital Humanities</span>
-            <span class="tag tag--secondary">Archives</span>
-          </div>
-        </div>
+      <div class="button-group" data-style-target="profile-actions">
+        <a href="#" class="button button--primary">Download CV</a>
+      </div>
 
-        <div class="pub-card card">
-          <div class="pub-header">
-            <span class="pub-venue">Speculum, 2024</span>
-          </div>
-          <h3 class="pub-title">Ink, Parchment, and Power: Material Practices of Record-Keeping in Late Medieval England</h3>
-          <p class="pub-authors">T. Whitfield</p>
-          <div class="tags-row">
-            <span class="tag tag--secondary">Material Culture</span>
-            <span class="tag tag--secondary">Paleography</span>
-          </div>
-        </div>
+      <div class="mini-stats" data-style-target="profile-stats">
+        <div class="stat-item"><span class="stat-value">6</span><span class="stat-label">Papers</span></div>
+        <div class="stat-item"><span class="stat-value">4</span><span class="stat-label">Projects</span></div>
+        <div class="stat-item"><span class="stat-value">5</span><span class="stat-label">Talks</span></div>
+      </div>
+    </aside>
 
-        <div class="pub-card card">
-          <div class="pub-header">
-            <span class="pub-venue">Journal of Medieval History, 2023</span>
-          </div>
-          <h3 class="pub-title">Between Memory and Erasure: Spatial Narratives of Plague in English Chronicle Manuscripts</h3>
-          <p class="pub-authors">T. Whitfield, M. Gallagher</p>
-          <div class="tags-row">
-            <span class="tag tag--secondary">Cultural Memory</span>
-            <span class="tag tag--secondary">GIS</span>
-          </div>
-        </div>
+    <!-- ============ ABOUT ============ -->
+    <section class="a-about section card" data-style-target="about-card">
+      <span class="eyebrow-text">About</span>
+      <h2 class="section-heading">AI people can read, steer, and trust</h2>
+      <p class="about-text">I design and study interactive systems that make AI assistance transparent and adjustable &mdash; putting real control back in people's hands rather than take-it-or-leave-it.</p>
+    </section>
+
+    <!-- ============ RESEARCH INTERESTS ============ -->
+    <section class="a-interests section card" data-style-target="interests-card">
+      <h2 class="section-heading">Research interests</h2>
+      <div class="tags-row">
+        <span class="tag">Human-AI Interaction</span>
+        <span class="tag">Explainable AI</span>
+        <span class="tag">Accessibility</span>
+        <span class="tag tag--secondary">Interaction Design</span>
+        <span class="tag tag--secondary">Tangible Interfaces</span>
+        <span class="tag tag--secondary">Qualitative Methods</span>
       </div>
     </section>
 
-    <!-- BOTTOM ROW -->
-    <div class="bottom-row">
-
-      <!-- Left: Projects + Skills -->
-      <div class="bottom-left">
-        <section class="section">
-          <h2 class="section-heading">Projects</h2>
-          <ul class="project-list">
-            <li class="project-item">
-              <span class="project-name">Voces Monasticae</span>
-              <span class="project-desc"> — A searchable digital archive of marginalised voices found in English monastic records, 1200–1450.</span>
-            </li>
-            <li class="project-item">
-              <span class="project-name">Parish Atlas</span>
-              <span class="project-desc"> — An interactive Historical GIS mapping parish boundaries, land tenure, and ecclesiastical authority across medieval Yorkshire.</span>
-            </li>
-            <li class="project-item">
-              <span class="project-name">Scripta</span>
-              <span class="project-desc"> — A palaeographic training tool using annotated manuscript images to teach medieval Latin handwriting recognition.</span>
-            </li>
-          </ul>
-        </section>
-
-        <div class="ap-divider"></div>
-
-        <section class="section">
-          <h2 class="section-heading">Skills &amp; Tools</h2>
-          <div class="tags-row">
-            <span class="tag tag--mono">Latin</span>
-            <span class="tag tag--mono">Anglo-Norman French</span>
-            <span class="tag tag--mono">Palaeography</span>
-            <span class="tag tag--mono">Codicology</span>
-            <span class="tag tag--mono">TEI/XML</span>
-            <span class="tag tag--mono">QGIS</span>
-          </div>
-          <div class="tags-row" style="margin-top: 6px">
-            <span class="tag tag--mono">Python</span>
-            <span class="tag tag--mono">R</span>
-            <span class="tag tag--mono">Archival Methods</span>
-            <span class="tag tag--mono">Network Analysis</span>
-            <span class="tag tag--mono">Oral History</span>
-          </div>
-        </section>
+    <!-- ============ AT A GLANCE ============ -->
+    <aside class="a-glance info-card card" data-style-target="at-a-glance">
+      <h2 class="section-heading">At a glance</h2>
+      <div class="info-list">
+        <div class="info-item">
+          <span class="info-label">Focus</span>
+          <span class="info-value">Human-AI interaction</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Based in</span>
+          <span class="info-value">Newcastle upon Tyne, UK</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Status</span>
+          <span class="status-badge">Open to 2026 internships</span>
+        </div>
       </div>
+    </aside>
 
-      <!-- Right: Experience + Education -->
-      <div class="bottom-right card">
-        <section class="section">
-          <h2 class="section-heading">Experience</h2>
-          <ul class="exp-list">
-            <li class="exp-item">
-              <span class="exp-role">Visiting Researcher</span>
-              <span class="exp-sep"> — </span>
-              <span class="exp-org">Bodleian Library, Oxford</span>
-              <span class="exp-year"> · 2025</span>
-            </li>
-            <li class="exp-item">
-              <span class="exp-role">Research Assistant</span>
-              <span class="exp-sep"> — </span>
-              <span class="exp-org">Centre for Medieval Studies, Ashworth</span>
-              <span class="exp-year"> · 2022–Present</span>
-            </li>
-            <li class="exp-item">
-              <span class="exp-role">Archival Intern</span>
-              <span class="exp-sep"> — </span>
-              <span class="exp-org">The National Archives, Kew</span>
-              <span class="exp-year"> · 2021</span>
-            </li>
-          </ul>
-        </section>
+    <!-- ============ PROJECTS (horizontal thumbnail cards) ============ -->
+    <section class="a-projects section card" data-style-target="project-section">
+      <h2 class="section-heading">Selected projects</h2>
+      <div class="project-strip">
 
-        <div class="ap-divider"></div>
+        <article class="project-card" data-style-target="project-card">
+          <div class="project-thumb" data-style-target="project-thumb" aria-label="Layered interface panels inspected with a lens">
+            <svg viewBox="0 0 120 90" role="img" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+              <rect x="0" y="0" width="120" height="90" fill="currentColor" opacity="0.05" />
+              <rect x="16" y="22" width="66" height="48" rx="6" fill="currentColor" opacity="0.10" />
+              <rect x="28" y="14" width="66" height="48" rx="6" fill="none" stroke="currentColor" stroke-width="2.5" />
+              <line x1="36" y1="26" x2="86" y2="26" stroke="currentColor" stroke-width="3" opacity="0.55" stroke-linecap="round" />
+              <line x1="36" y1="36" x2="74" y2="36" stroke="currentColor" stroke-width="3" opacity="0.35" stroke-linecap="round" />
+              <circle cx="90" cy="60" r="13" fill="none" stroke="currentColor" stroke-width="3" />
+              <circle cx="90" cy="60" r="4" fill="currentColor" opacity="0.55" />
+              <line x1="99" y1="69" x2="110" y2="80" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="project-body">
+            <div class="project-meta"><span class="status-badge">2026</span></div>
+            <h3 class="project-name">Glassbox</h3>
+            <p class="project-desc">Steerable, explained AI writing suggestions.</p>
+          </div>
+        </article>
 
-        <section class="section">
-          <h2 class="section-heading">Education</h2>
-          <ul class="edu-list">
-            <li class="edu-item">
-              <span class="edu-degree">PhD, Medieval History</span>
-              <span class="edu-sep"> — </span>
-              <span class="edu-school">Ashworth University</span>
-              <span class="edu-year"> · 2021–2026 (exp.)</span>
-            </li>
-            <li class="edu-item">
-              <span class="edu-degree">MA, Medieval Studies</span>
-              <span class="edu-sep"> — </span>
-              <span class="edu-school">St Andrews University</span>
-              <span class="edu-year"> · 2019–2021</span>
-            </li>
-            <li class="edu-item">
-              <span class="edu-degree">BA, History</span>
-              <span class="edu-sep"> — </span>
-              <span class="edu-school">University of Durham</span>
-              <span class="edu-year"> · 2016–2019</span>
-            </li>
-          </ul>
-        </section>
+        <article class="project-card" data-style-target="project-card">
+          <div class="project-thumb" data-style-target="project-thumb" aria-label="A control surface with a dial and sliders">
+            <svg viewBox="0 0 120 90" role="img" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+              <rect x="0" y="0" width="120" height="90" fill="currentColor" opacity="0.05" />
+              <rect x="18" y="22" width="84" height="46" rx="9" fill="none" stroke="currentColor" stroke-width="2.5" />
+              <circle cx="40" cy="45" r="13" fill="currentColor" opacity="0.10" />
+              <circle cx="40" cy="45" r="13" fill="none" stroke="currentColor" stroke-width="2.5" />
+              <line x1="40" y1="45" x2="40" y2="34" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+              <rect x="60" y="37" width="34" height="6" rx="3" fill="currentColor" opacity="0.35" />
+              <circle cx="80" cy="40" r="5" fill="currentColor" opacity="0.7" />
+              <rect x="60" y="51" width="34" height="6" rx="3" fill="currentColor" opacity="0.35" />
+              <circle cx="70" cy="54" r="5" fill="currentColor" opacity="0.7" />
+            </svg>
+          </div>
+          <div class="project-body">
+            <div class="project-meta"><span class="status-badge">2025</span></div>
+            <h3 class="project-name">Handset</h3>
+            <p class="project-desc">Tangible, non-visual controls for AI.</p>
+          </div>
+        </article>
+
+        <article class="project-card" data-style-target="project-card">
+          <div class="project-thumb" data-style-target="project-thumb" aria-label="A stack of study cards and notes">
+            <svg viewBox="0 0 120 90" role="img" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+              <rect x="0" y="0" width="120" height="90" fill="currentColor" opacity="0.05" />
+              <g transform="rotate(-7 44 48)"><rect x="22" y="22" width="46" height="46" rx="5" fill="currentColor" opacity="0.10" /></g>
+              <g transform="rotate(5 70 45)">
+                <rect x="48" y="18" width="46" height="46" rx="5" fill="none" stroke="currentColor" stroke-width="2.5" />
+                <line x1="56" y1="30" x2="86" y2="30" stroke="currentColor" stroke-width="3" opacity="0.5" stroke-linecap="round" />
+                <line x1="56" y1="40" x2="80" y2="40" stroke="currentColor" stroke-width="3" opacity="0.3" stroke-linecap="round" />
+              </g>
+              <circle cx="92" cy="68" r="8" fill="none" stroke="currentColor" stroke-width="2.5" />
+              <line x1="98" y1="74" x2="106" y2="82" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="project-body">
+            <div class="project-meta"><span class="status-badge">2024</span></div>
+            <h3 class="project-name">Everyday Prompts</h3>
+            <p class="project-desc">A diary study of prompt repair.</p>
+          </div>
+        </article>
+
+        <article class="project-card" data-style-target="project-card">
+          <div class="project-thumb" data-style-target="project-thumb" aria-label="A network of connected nodes">
+            <svg viewBox="0 0 120 90" role="img" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+              <rect x="0" y="0" width="120" height="90" fill="currentColor" opacity="0.05" />
+              <line x1="30" y1="28" x2="60" y2="46" stroke="currentColor" stroke-width="2.5" opacity="0.4" />
+              <line x1="60" y1="46" x2="92" y2="26" stroke="currentColor" stroke-width="2.5" opacity="0.4" />
+              <line x1="60" y1="46" x2="44" y2="70" stroke="currentColor" stroke-width="2.5" opacity="0.4" />
+              <line x1="60" y1="46" x2="88" y2="66" stroke="currentColor" stroke-width="2.5" opacity="0.4" />
+              <circle cx="30" cy="28" r="7" fill="currentColor" opacity="0.7" />
+              <circle cx="92" cy="26" r="5" fill="none" stroke="currentColor" stroke-width="2.5" />
+              <circle cx="44" cy="70" r="5" fill="none" stroke="currentColor" stroke-width="2.5" />
+              <circle cx="88" cy="66" r="5" fill="currentColor" opacity="0.45" />
+              <circle cx="60" cy="46" r="9" fill="none" stroke="currentColor" stroke-width="3" />
+              <circle cx="60" cy="46" r="3" fill="currentColor" />
+            </svg>
+          </div>
+          <div class="project-body">
+            <div class="project-meta"><span class="status-badge">2024</span></div>
+            <h3 class="project-name">Tracepad</h3>
+            <p class="project-desc">Auditing AI answers back to sources.</p>
+          </div>
+        </article>
+
       </div>
-    </div>
+    </section>
 
-    <!-- FOOTER -->
-    <footer class="ap-footer">
-      <span class="footer-link">t.whitfield@ashworth.ac.uk</span>
-      <span class="footer-sep">·</span>
-      <span>Room 214, Cloister Building</span>
-      <span class="footer-sep">·</span>
-      <span>Ashworth University</span>
-      <span class="footer-sep">·</span>
-      <span>© 2025</span>
-    </footer>
+    <!-- ============ PUBLICATIONS (compact rows) ============ -->
+    <section class="a-pubs section card" data-style-target="publication-section">
+      <h2 class="section-heading">Selected publications</h2>
+      <ul class="pub-list">
+        <li class="pub-item" data-style-target="publication-row">
+          <div class="pub-head">
+            <span class="pub-venue">CHI 2026</span>
+            <span class="pub-award">To appear</span>
+          </div>
+          <h3 class="pub-title">Turning the Dial: Steerable Suggestions in AI Writing Tools</h3>
+          <p class="pub-authors">D. Wang, R. Okafor, L. Petrova</p>
+        </li>
+        <li class="pub-item" data-style-target="publication-row">
+          <div class="pub-head">
+            <span class="pub-venue">DIS 2025</span>
+            <span class="pub-award">Honourable Mention</span>
+          </div>
+          <h3 class="pub-title">Feeling the Model: Tangible Controls for Non-Visual AI Use</h3>
+          <p class="pub-authors">D. Wang, S. Ahmed</p>
+        </li>
+        <li class="pub-item" data-style-target="publication-row">
+          <div class="pub-head">
+            <span class="pub-venue">CSCW 2024</span>
+          </div>
+          <h3 class="pub-title">Prompts in the Wild: How People Repair Conversations with Assistants</h3>
+          <p class="pub-authors">D. Wang, J. Meyer, K. Hollis</p>
+        </li>
+      </ul>
+    </section>
 
-  </div>
+    <!-- ============ EDUCATION ============ -->
+    <section class="a-edu section card" data-style-target="education-card">
+      <h2 class="section-heading">Education</h2>
+      <ul class="edu-list">
+        <li class="edu-item">
+          <span class="edu-date">2023 &mdash; present</span>
+          <strong class="edu-degree">PhD, Human-Computer Interaction</strong>
+          <span class="edu-org">Cewcastle University</span>
+        </li>
+        <li class="edu-item">
+          <span class="edu-date">2019 &mdash; 2023</span>
+          <strong class="edu-degree">BSc, Computer Science</strong>
+          <span class="edu-org">The University of Aeffield &middot; First Class</span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- ============ CONTACT ============ -->
+    <aside class="a-contact contact-card card" data-style-target="contact-section">
+      <h2 class="section-heading">Contact</h2>
+      <div class="contact-item">
+        <span class="contact-label">Email</span>
+        <a href="mailto:danni.wang@cewcastle.ac.uk" class="contact-value">danni.wang@cewcastle.ac.uk</a>
+      </div>
+      <div class="contact-item">
+        <span class="contact-label">Office</span>
+        <span class="contact-value">Room 3.14, Urban Sciences Building</span>
+      </div>
+      <div class="contact-item">
+        <span class="contact-label">Location</span>
+        <span class="contact-value">Newcastle upon Tyne, UK</span>
+      </div>
+    </aside>
+
+  </main>
 </body>
 </html>

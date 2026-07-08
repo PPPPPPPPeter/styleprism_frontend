@@ -61,8 +61,6 @@ type UpdateRequest = {
   styled_html: string
 }
 
-type FrontendRequest = GenerateRequest | UpdateRequest
-
 type SavedView = {
   id: string
   name: string
@@ -99,6 +97,12 @@ const UPDATE_API_URL = `${API_BASE_URL}/api/update-tags`
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API !== 'false'
 const SAVED_VIEWS_KEY = 'styleprism:saved-views'
 const MAX_HISTORY_ENTRIES = 40
+const DEFAULT_DIMENSION_PANEL_WIDTH = 340
+const MIN_DIMENSION_PANEL_WIDTH = 240
+const MIN_PREVIEW_WIDTH = 360
+const RESIZE_STEP = 24
+
+type IconName = 'plus' | 'pencil' | 'send' | 'chevron-up' | 'chevron-down' | 'undo' | 'redo' | 'sparkles'
 
 const now = new Date().toISOString()
 let rawHtml = presetHtml
@@ -116,10 +120,8 @@ let dimensionsTagsJson: DimensionsTagsJson = {
 
 let selectedTagId = ''
 let isInspectorOpen = false
-let promptText = 'Make the current profile more polished, academic and readable.'
+let promptText = ''
 let isLoading = false
-let lastRequest: FrontendRequest | null = null
-let statusText = 'Enter a prompt to generate style dimensions'
 let pendingTargetDimension: string | null = null
 let pendingNewDimensionName: string | null = null
 let savedViews: SavedView[] = readSavedViews()
@@ -133,10 +135,54 @@ let previewPickerDocument: Document | null = null
 let previewPickableElements: HTMLElement[] = []
 let previewHoveredElement: HTMLElement | null = null
 let previewSelectedElement: HTMLElement | null = null
+let previewHighlightedApplyRangeSelector: string | null = null
+let previewHighlightedApplyRangeElements: HTMLElement[] = []
+let isGalleryCollapsed = false
+let dimensionPanelWidth = DEFAULT_DIMENSION_PANEL_WIDTH
 
 const $ = <T extends Element>(selector: string) => document.querySelector<T>(selector)
 const $$ = <T extends Element>(selector: string) => Array.from(document.querySelectorAll<T>(selector))
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+
+function icon(name: IconName) {
+  const paths: Record<IconName, string> = {
+    plus: '<path d="M12 5v14"></path><path d="M5 12h14"></path>',
+    pencil: '<path d="M12 20h9"></path><path d="m16.5 3.5 4 4L8 20H4v-4L16.5 3.5Z"></path>',
+    send: '<path d="M22 2 11 13"></path><path d="m22 2-7 20-4-9-9-4 20-7Z"></path>',
+    'chevron-up': '<path d="m18 15-6-6-6 6"></path>',
+    'chevron-down': '<path d="m6 9 6 6 6-6"></path>',
+    undo: '<path d="M9 14 4 9l5-5"></path><path d="M4 9h11a5 5 0 0 1 0 10h-2"></path>',
+    redo: '<path d="m15 14 5-5-5-5"></path><path d="M20 9H9a5 5 0 0 0 0 10h2"></path>',
+    sparkles: '<path d="m12 3 1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7L12 3Z"></path><path d="m19 14 .8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14Z"></path><path d="m5 13 .7 1.8L8 15.5l-2.3.7L5 18l-.7-1.8-2.3-.7 2.3-.7L5 13Z"></path>',
+  }
+
+  return `<svg aria-hidden="true" viewBox="0 0 24 24">${paths[name]}</svg>`
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function resizePromptTextarea(input: HTMLTextAreaElement) {
+  input.style.height = 'auto'
+
+  const styles = window.getComputedStyle(input)
+  const minHeight = Number.parseFloat(styles.minHeight)
+  const maxHeight = Number.parseFloat(styles.maxHeight)
+  const hasMaxHeight = Number.isFinite(maxHeight)
+  const nextHeight = Math.max(
+      Number.isFinite(minHeight) ? minHeight : 0,
+      Math.min(input.scrollHeight, hasMaxHeight ? maxHeight : input.scrollHeight)
+  )
+
+  input.style.height = `${nextHeight}px`
+  input.style.overflowY = hasMaxHeight && input.scrollHeight > maxHeight ? 'auto' : 'hidden'
+}
+
+function syncPromptTextareaHeight() {
+  const input = $<HTMLTextAreaElement>('#prompt-input')
+  if (input) resizePromptTextarea(input)
+}
 
 function readElementScroll<T extends HTMLElement>(selector: string) {
   const element = $<T>(selector)
@@ -308,13 +354,117 @@ function ensureElementPickerStyles(doc: Document) {
       box-shadow: 0 0 0 5px rgba(79, 70, 229, .18) !important;
       cursor: crosshair !important;
     }
+    [data-styleprism-selector-highlight] {
+      outline: 3px solid rgba(245, 158, 11, .98) !important;
+      outline-offset: 4px !important;
+      box-shadow: 0 0 0 7px rgba(245, 158, 11, .22), 0 10px 24px rgba(15, 23, 42, .18) !important;
+      border-radius: 4px !important;
+    }
+    [data-styleprism-selector-highlight-primary] {
+      outline-color: rgba(79, 70, 229, .98) !important;
+      box-shadow: 0 0 0 7px rgba(79, 70, 229, .2), 0 10px 24px rgba(15, 23, 42, .2) !important;
+    }
   `
   doc.head?.appendChild(style)
+}
+
+function readPreviewDocument() {
+  const frame = $<HTMLIFrameElement>('.preview-frame')
+
+  try {
+    return frame?.contentDocument?.body ? frame.contentDocument : null
+  } catch {
+    return null
+  }
 }
 
 function clearPreviewPickerMarks() {
   previewHoveredElement?.removeAttribute('data-styleprism-picker-hover')
   previewSelectedElement?.removeAttribute('data-styleprism-picker-selected')
+}
+
+function clearPreviewApplyRangeMarks(doc: Document | null = readPreviewDocument()) {
+  previewHighlightedApplyRangeElements.forEach((element) => {
+    element.removeAttribute('data-styleprism-selector-highlight')
+    element.removeAttribute('data-styleprism-selector-highlight-primary')
+  })
+
+  doc
+      ?.querySelectorAll('[data-styleprism-selector-highlight], [data-styleprism-selector-highlight-primary]')
+      .forEach((element) => {
+        element.removeAttribute('data-styleprism-selector-highlight')
+        element.removeAttribute('data-styleprism-selector-highlight-primary')
+      })
+
+  previewHighlightedApplyRangeElements = []
+}
+
+function setApplyRangeChipPreviewState() {
+  $$<HTMLElement>('[data-preview-apply-range]').forEach((target) => {
+    const selector = normalizeApplyRangeSelector(target.dataset.previewApplyRange ?? '')
+    const isPreviewing = Boolean(previewHighlightedApplyRangeSelector && selector === previewHighlightedApplyRangeSelector)
+
+    target.closest('.apply-range-chip')?.classList.toggle('is-previewing', isPreviewing)
+  })
+}
+
+function markApplyRangeSelectorInPreview(selector: string, shouldScroll = false) {
+  const doc = readPreviewDocument()
+  if (!doc) return false
+
+  clearPreviewApplyRangeMarks(doc)
+  ensureElementPickerStyles(doc)
+
+  let matches: HTMLElement[]
+  try {
+    matches = Array.from(doc.querySelectorAll<HTMLElement>(selector)).filter(isPreviewElementPickable)
+  } catch {
+    return true
+  }
+
+  matches.forEach((element, index) => {
+    element.setAttribute('data-styleprism-selector-highlight', 'true')
+    if (index === 0) element.setAttribute('data-styleprism-selector-highlight-primary', 'true')
+  })
+
+  previewHighlightedApplyRangeElements = matches
+  if (shouldScroll) matches[0]?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' })
+
+  return true
+}
+
+function syncApplyRangePreviewHighlight(shouldScroll = false) {
+  if (!previewHighlightedApplyRangeSelector) {
+    clearPreviewApplyRangeMarks()
+    setApplyRangeChipPreviewState()
+    return
+  }
+
+  const frame = $<HTMLIFrameElement>('.preview-frame')
+  if (!frame) return
+
+  const applyHighlight = () => {
+    if (!markApplyRangeSelectorInPreview(previewHighlightedApplyRangeSelector ?? '', shouldScroll)) return
+    setApplyRangeChipPreviewState()
+  }
+
+  frame.addEventListener('load', applyHighlight, { once: true })
+  requestAnimationFrame(applyHighlight)
+  setTimeout(applyHighlight, 0)
+}
+
+function clearApplyRangePreviewHighlight() {
+  previewHighlightedApplyRangeSelector = null
+  clearPreviewApplyRangeMarks()
+  setApplyRangeChipPreviewState()
+}
+
+function hoverApplyRangeSelectorInPreview(selector: string) {
+  const normalizedSelector = normalizeApplyRangeSelector(selector)
+  if (!normalizedSelector) return
+
+  previewHighlightedApplyRangeSelector = normalizedSelector
+  syncApplyRangePreviewHighlight(true)
 }
 
 function setPreviewPickedElement(element: HTMLElement | null) {
@@ -435,6 +585,7 @@ function insertPromptSelector(selector: string) {
   promptText = nextValue
   if (input) {
     input.value = nextValue
+    resizePromptTextarea(input)
     input.focus()
     input.selectionStart = insertIndex + token.length
     input.selectionEnd = input.selectionStart
@@ -652,7 +803,7 @@ function persistSavedViews() {
   try {
     localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews))
   } catch {
-    statusText = 'Gallery saved for this session only'
+    // localStorage can be unavailable in private browsing; keeping the in-memory view is enough.
   }
 }
 
@@ -776,7 +927,6 @@ function exportCurrentPreviewHtml() {
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 
-  statusText = 'Exported current preview HTML'
   render()
 }
 
@@ -794,7 +944,7 @@ function rememberCurrentState() {
   historyFuture = []
 }
 
-function restoreSnapshot(snapshot: HistoryEntry, nextStatus: string) {
+function restoreSnapshot(snapshot: HistoryEntry) {
   dimensionsTagsJson = clone(snapshot.dimensionsTagsJson)
   promptText = snapshot.promptText
   isInspectorOpen = snapshot.isInspectorOpen
@@ -802,7 +952,6 @@ function restoreSnapshot(snapshot: HistoryEntry, nextStatus: string) {
   selectedTagId = availableTags.some((tag) => tag.tag_id === snapshot.selectedTagId)
       ? snapshot.selectedTagId
       : availableTags[0]?.tag_id ?? selectedTagId
-  statusText = nextStatus
   render()
 }
 
@@ -811,7 +960,7 @@ function undoHistory() {
   const previous = historyPast[historyPast.length - 1]
   historyPast = historyPast.slice(0, -1)
   historyFuture = [snapshotState(), ...historyFuture].slice(0, MAX_HISTORY_ENTRIES)
-  restoreSnapshot(previous, 'Returned to previous version')
+  restoreSnapshot(previous)
 }
 
 function redoHistory() {
@@ -819,7 +968,7 @@ function redoHistory() {
   const next = historyFuture[0]
   historyFuture = historyFuture.slice(1)
   historyPast = [...historyPast, snapshotState()].slice(-MAX_HISTORY_ENTRIES)
-  restoreSnapshot(next, 'Returned to newer version')
+  restoreSnapshot(next)
 }
 
 function rememberCurrentStateFrom(snapshot: HistoryEntry) {
@@ -853,16 +1002,15 @@ function buildRequest(operation: Operation, field: UpdateRequest['target']['fiel
 
 async function sendUpdate(operation: Operation, field: UpdateRequest['target']['field'] = null) {
   const previousState = snapshotState()
+  const request = buildRequest(operation, field)
   isLoading = true
-  statusText = `Sending ${operation}...`
-  lastRequest = buildRequest(operation, field)
   render()
 
   try {
     const response = await fetch(UPDATE_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(lastRequest),
+      body: JSON.stringify(request),
     })
 
     if (!response.ok) {
@@ -874,12 +1022,10 @@ async function sendUpdate(operation: Operation, field: UpdateRequest['target']['
     dimensionsTagsJson = updatedJson
     refreshMetadata()
     selectedTagId = flattenTags()[0]?.tag_id ?? selectedTagId
-    statusText = 'Updated from backend'
     pendingTargetDimension = null
     pendingNewDimensionName = null
   } catch (error) {
     console.error(error)
-    statusText = 'Backend unavailable. Request JSON prepared in debug panel.'
   } finally {
     isLoading = false
     render()
@@ -896,8 +1042,6 @@ async function generateInitialDimensionsTagsJson() {
   }
 
   isLoading = true
-  statusText = USE_MOCK_API ? 'Generating Dimensions & Tags JSON...' : 'Generating Dimensions & Tags JSON...'
-  lastRequest = request
   render()
 
   try {
@@ -915,10 +1059,8 @@ async function generateInitialDimensionsTagsJson() {
     refreshMetadata()
     selectedTagId = flattenTags()[0]?.tag_id ?? ''
     rememberCurrentStateFrom(previousState)
-    statusText = USE_MOCK_API ? 'Generated data from backend DimensionAndTags.json' : 'Generated from backend'
   } catch (error) {
     console.error(error)
-    statusText = 'Backend unavailable. Prompt is ready to retry.'
   } finally {
     isLoading = false
     render()
@@ -1032,15 +1174,12 @@ function saveCurrentView(name: string, thumbnailName: string) {
   persistSavedViews()
   isSaveDialogOpen = false
   saveDialogError = ''
-  statusText = 'Saved to gallery'
   render()
 }
 
 function deleteSavedView(viewId: string) {
-  const deletedView = savedViews.find((view) => view.id === viewId)
   savedViews = savedViews.filter((view) => view.id !== viewId)
   persistSavedViews()
-  statusText = deletedView ? `Deleted ${deletedView.name}` : 'Deleted saved view'
   render()
 }
 
@@ -1052,7 +1191,6 @@ function restoreSavedView(viewId: string) {
   promptText = savedView.prompt
   selectedTagId = flattenTags()[0]?.tag_id ?? selectedTagId
   isInspectorOpen = false
-  statusText = `Restored ${savedView.name}`
   render()
 }
 
@@ -1096,6 +1234,8 @@ function removeSelectedApplyRange(selector: string) {
     block.apply_range = uniqueApplyRangeSelectors(block.apply_range)
         .filter((item) => normalizeApplyRangeSelector(item) !== normalizedSelector)
   })
+
+  if (previewHighlightedApplyRangeSelector === normalizedSelector) clearApplyRangePreviewHighlight()
 
   refreshMetadata()
   render()
@@ -1173,7 +1313,6 @@ function deleteDimension(dimensionName: string) {
   }
 
   refreshMetadata()
-  statusText = `Deleted ${titleCase(dimensionName)}`
   render()
 }
 
@@ -1191,7 +1330,6 @@ function deleteTag(tagId: string) {
   }
 
   refreshMetadata()
-  statusText = `Deleted ${titleCase(tagId)}`
   render()
 }
 
@@ -1205,11 +1343,16 @@ function renderApplyRangeEditor() {
             ? selectors
                 .map((selector) => {
                   const normalizedSelector = normalizeApplyRangeSelector(selector)
+                  const isPreviewing = previewHighlightedApplyRangeSelector === normalizedSelector
 
                   return `
-                    <span class="apply-range-chip">
-                      <span>@${escapeHtml(normalizedSelector)}</span>
+                    <span class="apply-range-chip ${isPreviewing ? 'is-previewing' : ''}">
+                      <span
+                        class="apply-range-chip-target"
+                        data-preview-apply-range="${escapeHtml(normalizedSelector)}"
+                      >@${escapeHtml(normalizedSelector)}</span>
                       <button
+                        class="apply-range-chip-remove"
                         type="button"
                         data-remove-apply-range="${escapeHtml(normalizedSelector)}"
                         aria-label="Remove ${escapeHtml(normalizedSelector)} from apply range"
@@ -1264,7 +1407,13 @@ function renderDimensions() {
                     : ''
               }
             </div>
-            <button class="ghost small" type="button" data-add-tag="${escapeHtml(dimension.dimension)}">+ Tag</button>
+            <button
+              class="ghost small icon-add-button icon-add-button--tag"
+              type="button"
+              data-add-tag="${escapeHtml(dimension.dimension)}"
+              aria-label="Add Tag"
+              title="Add Tag"
+            >${icon('plus')}</button>
           </div>
           <div class="tag-list">
             ${dimension.tags
@@ -1279,14 +1428,14 @@ function renderDimensions() {
                     >
                       <span class="status-dot"></span>
                       <span class="tag-label">${escapeHtml(titleCase(tag.tag_id))}</span>
-                      <strong>${tag.status}</strong>
                     </button>
                     <button
                       class="info-button ${isInspectorOpen && tag.tag_id === selectedTagId ? 'is-selected' : ''}"
                       type="button"
                       data-open-detail="${escapeHtml(tag.tag_id)}"
-                      aria-label="Show ${escapeHtml(titleCase(tag.tag_id))} details"
-                    >i</button>
+                      aria-label="Edit ${escapeHtml(titleCase(tag.tag_id))} details"
+                      title="Edit tag details"
+                    >${icon('pencil')}</button>
                     ${
                       tag.status === 'inactive'
                           ? `
@@ -1306,7 +1455,7 @@ function renderDimensions() {
                               </svg>
                             </button>
                           `
-                          : ''
+                          : '<span class="tag-delete-spacer" aria-hidden="true"></span>'
                     }
                   </div>
                 `,
@@ -1349,10 +1498,10 @@ function renderInspector() {
       <button class="primary wide" type="button" data-ai-semantics>Update style from semantics</button>
 
       <label class="field">
-        <span>Apply range</span>
+        <span>Applied components</span>
         ${renderApplyRangeEditor()}
       </label>
-      <button class="primary wide" type="button" data-ai-range>Update style from apply range</button>
+<!--      <button class="primary wide" type="button" data-ai-range>Update style from apply range</button>-->
 
       <section class="code-card">
         <div class="section-row">
@@ -1455,22 +1604,86 @@ function renderSaveDialog() {
   `
 }
 
-function renderDebugPanel() {
-  const request = lastRequest ?? (
-    hasGeneratedTags()
-        ? buildRequest('UPDATE_PROMPT_OR_REFRESH')
-        : {
-          mock: USE_MOCK_API,
-          prompt: promptTextForRequest(),
-          html: rawHtml,
-        }
-  )
-  return `
-    <details class="debug-panel">
-      <summary>Frontend request JSON preview</summary>
-      <pre>${escapeHtml(JSON.stringify(request, null, 2))}</pre>
-    </details>
-  `
+function maxDimensionPanelWidth(layout: HTMLElement) {
+  const style = getComputedStyle(layout)
+  const gap = parseFloat(style.columnGap || style.gap) || 0
+  const dividerWidth = $<HTMLElement>('.layout-divider')?.getBoundingClientRect().width ?? 0
+  const inspectorWidth = $<HTMLElement>('.inspector')?.getBoundingClientRect().width ?? 0
+  const columnCount = isInspectorOpen ? 4 : 3
+  const reservedGaps = gap * (columnCount - 1)
+  const previewMin = isInspectorOpen ? 320 : MIN_PREVIEW_WIDTH
+  const maxWidth = layout.clientWidth - previewMin - inspectorWidth - dividerWidth - reservedGaps
+
+  return Math.max(MIN_DIMENSION_PANEL_WIDTH, Math.floor(maxWidth))
+}
+
+function clampDimensionPanelWidth(width: number, layout = $<HTMLElement>('.layout')) {
+  const maxWidth = layout ? maxDimensionPanelWidth(layout) : DEFAULT_DIMENSION_PANEL_WIDTH
+  return clamp(Math.round(width), MIN_DIMENSION_PANEL_WIDTH, maxWidth)
+}
+
+function setDimensionPanelWidth(width: number, layout = $<HTMLElement>('.layout')) {
+  dimensionPanelWidth = clampDimensionPanelWidth(width, layout)
+  layout?.style.setProperty('--dimension-panel-width', `${dimensionPanelWidth}px`)
+  layout?.querySelector<HTMLElement>('.layout-divider')?.setAttribute('aria-valuenow', String(dimensionPanelWidth))
+}
+
+function bindPanelResize() {
+  const divider = $<HTMLElement>('.layout-divider')
+  if (!divider) return
+
+  divider.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return
+
+    const layout = divider.closest<HTMLElement>('.layout')
+    if (!layout) return
+
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = dimensionPanelWidth
+    document.body.classList.add('is-resizing-panels')
+    divider.setPointerCapture(event.pointerId)
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setDimensionPanelWidth(startWidth - (moveEvent.clientX - startX), layout)
+    }
+
+    const finishResize = () => {
+      document.body.classList.remove('is-resizing-panels')
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', finishResize)
+      window.removeEventListener('pointercancel', finishResize)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', finishResize, { once: true })
+    window.addEventListener('pointercancel', finishResize, { once: true })
+  })
+
+  divider.addEventListener('keydown', (event) => {
+    const layout = divider.closest<HTMLElement>('.layout')
+    if (!layout) return
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      setDimensionPanelWidth(dimensionPanelWidth + RESIZE_STEP, layout)
+    }
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      setDimensionPanelWidth(dimensionPanelWidth - RESIZE_STEP, layout)
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault()
+      setDimensionPanelWidth(MIN_DIMENSION_PANEL_WIDTH, layout)
+    }
+
+    if (event.key === 'End') {
+      event.preventDefault()
+      setDimensionPanelWidth(maxDimensionPanelWidth(layout), layout)
+    }
+  })
 }
 
 function render() {
@@ -1480,17 +1693,44 @@ function render() {
   const hasTags = allTags.length > 0
   const allTagsActive = allTags.length > 0 && allTags.every((tag) => tag.status === 'active')
   const bulkTarget: TagStatus = allTagsActive ? 'inactive' : 'active'
-  const bulkLabel = allTagsActive ? 'All inactive' : 'All active'
 
   app.innerHTML = `
     <main class="app-shell">
-      <header class="topbar">
-        <div class="gallery-strip" aria-label="Saved view gallery">
-          ${renderSavedViews()}
-        </div>
+      <header class="topbar ${isGalleryCollapsed ? 'is-collapsed' : ''}">
+        ${
+          isGalleryCollapsed
+              ? `
+                <button
+                  class="gallery-rail"
+                  type="button"
+                  data-toggle-gallery
+                  aria-expanded="false"
+                  aria-label="Expand gallery"
+                  title="Expand gallery"
+                >
+                  <span></span>
+                  ${icon('chevron-down')}
+                </button>
+              `
+              : `
+                <div class="gallery-strip" aria-label="Saved view gallery">
+                  ${renderSavedViews()}
+                </div>
+                <button
+                  class="gallery-toggle"
+                  type="button"
+                  data-toggle-gallery
+                  aria-expanded="true"
+                  aria-label="Collapse gallery"
+                  title="Collapse gallery"
+                >
+                  ${icon('chevron-up')}
+                </button>
+              `
+        }
       </header>
 
-      <section class="layout ${isInspectorOpen ? 'has-inspector' : ''}">
+      <section class="layout ${isInspectorOpen ? 'has-inspector' : ''}" style="--dimension-panel-width: ${dimensionPanelWidth}px">
         <section class="preview-column">
           <div class="preview-toolbar">
             <div>
@@ -1508,41 +1748,59 @@ function render() {
             </div>
           </div>
           <iframe class="preview-frame" title="Styled HTML Preview" srcdoc="${escapeHtml(buildStyledHtml())}"></iframe>
-          ${renderDebugPanel()}
         </section>
+
+        <div
+          class="layout-divider"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize preview and Style Dimensions panels"
+          aria-valuemin="${MIN_DIMENSION_PANEL_WIDTH}"
+          aria-valuenow="${dimensionPanelWidth}"
+          tabindex="0"
+        ></div>
 
         <aside class="dimension-panel">
           <div class="history-toolbar" aria-label="Version history controls">
-            <button class="ghost history-button" type="button" data-undo-history ${historyPast.length === 0 || isLoading ? 'disabled' : ''} aria-label="Undo to previous version">↶ Undo</button>
-            <button class="ghost history-button" type="button" data-redo-history ${historyFuture.length === 0 || isLoading ? 'disabled' : ''} aria-label="Redo to newer version">Redo ↷</button>
+            <button class="ghost history-button" type="button" data-undo-history ${historyPast.length === 0 || isLoading ? 'disabled' : ''} aria-label="Undo" title="Undo">${icon('undo')}</button>
+            <button class="ghost history-button" type="button" data-redo-history ${historyFuture.length === 0 || isLoading ? 'disabled' : ''} aria-label="Redo" title="Redo">${icon('redo')}</button>
           </div>
-          <section class="prompt-card">
-            <div class="panel-title">
-              <div>
-                <h2>Prompt</h2>
-              </div>
+          <section class="prompt-card" aria-label="Prompt editor">
+            <div class="prompt-card-accent" aria-hidden="true">
+              <span class="section-icon section-icon--prompt">${icon('sparkles')}</span>
             </div>
             <form class="promptbar">
-              <textarea id="prompt-input" rows="5" placeholder="Describe a visual update...">${escapeHtml(promptText)}</textarea>
-              <button class="primary" type="submit" ${isLoading ? 'disabled' : ''}>Generate</button>
+              <textarea id="prompt-input" rows="5" placeholder="Describe any style you like — e.g. 'retro synthwave', 'brutalist minimal', 'soft pastel dreamscape'...">${escapeHtml(promptText)}</textarea>
+              <button class="primary generate-button" type="submit" ${isLoading ? 'disabled' : ''} aria-label="Generate" title="Generate">${icon('send')}</button>
             </form>
           </section>
-          <div class="panel-title">
-            <div>
-              <h2>Style Dimensions</h2>
-            </div>
+          <div class="dimension-toolbar" aria-label="Style dimensions controls">
             <span class="count-pill">${allTags.length} tags</span>
-          </div>
-          <div class="control-actions">
-            <span class="status ${isLoading ? 'is-loading' : ''}">${escapeHtml(statusText)}</span>
-            ${
-              hasTags
-                  ? `
-                    <button class="ghost" type="button" data-toggle-all="${bulkTarget}">${bulkLabel}</button>
-                    <button class="primary" type="button" data-add-dimension>+ Dimension</button>
-                  `
-                  : ''
-            }
+            <div class="control-actions">
+              ${
+                hasTags
+                    ? `
+                      <span class="bulk-toggle-control ${allTagsActive ? 'is-on' : ''}">
+                        <span class="bulk-toggle-label">All</span>
+                        <button
+                          class="toggle-switch ${allTagsActive ? 'is-on' : ''}"
+                          type="button"
+                          role="switch"
+                          aria-checked="${allTagsActive}"
+                          aria-label="Toggle all tags"
+                          title="Toggle all tags"
+                          data-toggle-all="${bulkTarget}"
+                        >
+                          <span class="toggle-switch__track" aria-hidden="true">
+                            <span class="toggle-switch__thumb"></span>
+                          </span>
+                        </button>
+                      </span>
+                      <button class="primary icon-add-button icon-add-button--dimension" type="button" data-add-dimension aria-label="Add Dimension" title="Add Dimension">${icon('plus')}</button>
+                    `
+                    : ''
+              }
+            </div>
           </div>
           ${
             hasTags
@@ -1563,16 +1821,26 @@ function render() {
   `
 
   bindEvents()
+  syncPromptTextareaHeight()
   restoreScrollSnapshot(scrollSnapshot)
   if (elementPickerSource) attachElementPickerToPreview()
+  if (previewHighlightedApplyRangeSelector) syncApplyRangePreviewHighlight()
 }
 
 function bindEvents() {
   window.removeEventListener('keydown', handleElementPickerKeydown, true)
   window.addEventListener('keydown', handleElementPickerKeydown, true)
 
+  $('[data-toggle-gallery]')?.addEventListener('click', () => {
+    isGalleryCollapsed = !isGalleryCollapsed
+    render()
+  })
+
+  bindPanelResize()
+
   $$<HTMLButtonElement>('[data-open-detail]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (selectedTagId !== button.dataset.openDetail) clearApplyRangePreviewHighlight()
       selectedTagId = button.dataset.openDetail ?? selectedTagId
       isInspectorOpen = true
       render()
@@ -1633,6 +1901,7 @@ function bindEvents() {
     sendUpdate('ADD_NEW_DIMENSION')
   })
   $('[data-close-inspector]')?.addEventListener('click', () => {
+    clearApplyRangePreviewHighlight()
     isInspectorOpen = false
     render()
   })
@@ -1644,6 +1913,7 @@ function bindEvents() {
   $('#prompt-input')?.addEventListener('input', (event) => {
     const input = event.target as HTMLTextAreaElement
     promptText = input.value
+    resizePromptTextarea(input)
 
     if ((event as InputEvent).data === '@') {
       startElementPicker('prompt', Math.max(0, input.selectionStart - 1))
@@ -1690,7 +1960,15 @@ function bindEvents() {
   })
 
   $$<HTMLButtonElement>('[data-remove-apply-range]').forEach((button) => {
-    button.addEventListener('click', () => removeSelectedApplyRange(button.dataset.removeApplyRange ?? ''))
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      removeSelectedApplyRange(button.dataset.removeApplyRange ?? '')
+    })
+  })
+
+  $$<HTMLElement>('[data-preview-apply-range]').forEach((target) => {
+    target.addEventListener('mouseenter', () => hoverApplyRangeSelectorInPreview(target.dataset.previewApplyRange ?? ''))
+    target.addEventListener('mouseleave', clearApplyRangePreviewHighlight)
   })
 
   $('[data-ai-semantics]')?.addEventListener('click', () => sendUpdate('UPDATE_TAG_DESIGN_SEMANTICS', 'design_semantics'))
